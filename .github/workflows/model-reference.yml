@@ -1,0 +1,75 @@
+name: Model weight reference
+run-name: model-weights-${{ inputs.request_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      model_id:
+        description: Public Hugging Face organization/repository
+        required: true
+        type: string
+      revision:
+        description: Exact 40-character Hugging Face commit SHA
+        required: true
+        type: string
+      nonce_client:
+        description: Fresh 32-byte nonce, 64 lowercase hexadecimal characters
+        required: true
+        type: string
+      request_id:
+        description: Unique request ID, 32 lowercase hexadecimal characters
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: model-reference-${{ github.repository }}-${{ inputs.request_id }}
+  cancel-in-progress: false
+
+jobs:
+  reference:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check out the workflow's exact source commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Stream public HF weights and compute the challenge digest
+        env:
+          MODEL_ID: ${{ inputs.model_id }}
+          HF_REVISION: ${{ inputs.revision }}
+          NONCE_CLIENT: ${{ inputs.nonce_client }}
+          REQUEST_ID: ${{ inputs.request_id }}
+        run: |
+          mkdir out
+          python3 model_weights.py reference \
+            --model-id "$MODEL_ID" --revision "$HF_REVISION" \
+            --nonce "$NONCE_CLIENT" --request-id "$REQUEST_ID" \
+            --output out/weights.json
+          python3 github_verifier.py envelope --result out/weights.json --output out/result.json
+      - name: Attest the exact result file
+        id: attest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: out/result.json
+      - name: Save the signature bundle alongside the result
+        env:
+          BUNDLE_PATH: ${{ steps.attest.outputs.bundle-path }}
+        run: cp -- "$BUNDLE_PATH" out/bundle.json
+      - name: Publish only the small result and signature bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: model-reference-${{ inputs.request_id }}
+          path: |
+            out/result.json
+            out/bundle.json
+          if-no-files-found: error
+          retention-days: 7
