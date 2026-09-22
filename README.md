@@ -1,5 +1,7 @@
 # Confidential AI model weight reference
 
+For the new cc_node / cc_verifier Merkle protocol, see [CC-MERKLE.md](CC-MERKLE.md). It uses a separate workflow and keeps the existing serial protocol unchanged.
+
 Compute a fresh challenge digest over **every byte of a pinned Hugging Face model's safetensors files**, then attest the small result using GitHub Actions artifact attestations. A verifier can compare this independently computed reference with a CVM collector's result.
 
 **This is a reference implementation and integration component. It does not obtain or verify TDX quotes, establish collector trust, or prove inference execution.** A matching result alone does not prove files reside in a CVM: a dishonest collector could copy a public reference result. The hardware verifier must independently approve and attest the actual collector and its execution environment.
